@@ -1,4 +1,5 @@
 import boto3
+import json
 import os
 import subprocess
 import sys
@@ -9,7 +10,7 @@ from ray_coverage import (
     S3_BUCKET_FILEPATH,
     S3_BUCKET_NAME,
 )
-from typing import List
+from typing import List, Set
 
 
 def main() -> int:
@@ -22,7 +23,17 @@ def main() -> int:
     logger.info(f"Changed files: {changed_files}")
     test_targets = _get_test_targets_for_changed_files(changed_files)
     logger.info(test_targets)
+    _run_tests(test_targets)
     return 0
+
+
+def _run_tests(test_targets: Set[str]) -> None:
+    """
+    Run the tests.
+    """
+    subprocess.check_call(
+        ["bazel", "test", "--test_output=streamed"] + list(test_targets)
+    )
 
 
 def _get_test_targets_for_changed_files(changed_files: List[str]) -> str:
@@ -30,10 +41,25 @@ def _get_test_targets_for_changed_files(changed_files: List[str]) -> str:
     Get the test target for the changed files.
     """
     coverage_file = _get_coverage_file()
-    coverage_info = subprocess.check_output(
-        ["coverage", "report", f"--data-file={coverage_file}"]
-    ).decode("utf-8")
-    return coverage_info
+    subprocess.check_output(
+        [
+            "coverage",
+            "json",
+            f"--data-file={coverage_file}",
+            "--show-contexts",
+            f"--include={','.join(changed_files)}",
+        ]
+    )
+    coverage_data = json.load(open("coverage.json"))
+    test_targets = set()
+    for file_metadata in coverage_data["files"].values():
+        contexts = file_metadata["contexts"]
+        for tests_per_line in contexts.values():
+            for test_per_line in tests_per_line:
+                test_targets.add(
+                    f"//release:{test_per_line.split('::')[0].split('/')[-1][:-3]}",
+                )
+    return test_targets
 
 
 def _get_coverage_file() -> str:
@@ -63,7 +89,8 @@ def _get_changed_files() -> List[str]:
     """
     Get the list of changed files in the current PR.
     """
-    base_branch = os.environ["BUILDKITE_PULL_REQUEST_BASE_BRANCH"]
+    #    base_branch = os.environ["BUILDKITE_PULL_REQUEST_BASE_BRANCH"]
+    base_branch = "can-coverage"
     return (
         subprocess.check_output(
             ["git", "diff", "--name-only", f"origin/{base_branch}..HEAD"]
