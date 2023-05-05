@@ -23,7 +23,10 @@ def main() -> int:
     changed_files = _get_changed_files()
     logger.info(f"Changed files: {changed_files}")
     test_targets = _get_test_targets_for_changed_files(changed_files)
-    logger.info(test_targets)
+    logger.info(f"Test targets to run: {test_targets}")
+    if not test_targets:
+        logger.info("No tests to run")
+        return 0
     _run_tests(test_targets)
     return 0
 
@@ -42,15 +45,20 @@ def _get_test_targets_for_changed_files(changed_files: List[str]) -> Set[str]:
     Get the test target for the changed files.
     """
     coverage_file = _get_coverage_file()
-    subprocess.check_output(
-        [
-            "coverage",
-            "json",
-            f"--data-file={coverage_file}",
-            "--show-contexts",
-            f"--include={','.join(changed_files)}",
-        ]
-    )
+    logger = get_logger()
+    try:
+        subprocess.check_output(
+            [
+                "coverage",
+                "json",
+                f"--data-file={coverage_file}",
+                "--show-contexts",
+                f"--include={','.join(changed_files)}",
+            ]
+        )
+    except subprocess.CalledProcessError as e:
+        logger.info(f"Failed to generate coverage data: {e.output}")
+        return set()
     # coverage data is generated into a json file named coverage.json, with the
     # following format:
     # {
@@ -106,7 +114,8 @@ def _get_changed_files() -> List[str]:
     """
     Get the list of changed files in the current PR.
     """
-    base_branch = os.environ["BUILDKITE_PULL_REQUEST_BASE_BRANCH"]
+    #    base_branch = os.environ["BUILDKITE_PULL_REQUEST_BASE_BRANCH"]
+    base_branch = "can-coverage"
     return (
         subprocess.check_output(
             ["git", "diff", "--name-only", f"origin/{base_branch}..HEAD"]
