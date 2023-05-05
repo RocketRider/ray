@@ -106,8 +106,7 @@ def _get_changed_files() -> List[str]:
     """
     Get the list of changed files in the current PR.
     """
-    #    base_branch = os.environ["BUILDKITE_PULL_REQUEST_BASE_BRANCH"]
-    base_branch = "can-coverage"
+    base_branch = os.environ["BUILDKITE_PULL_REQUEST_BASE_BRANCH"]
     return (
         subprocess.check_output(
             ["git", "diff", "--name-only", f"origin/{base_branch}..HEAD"]
