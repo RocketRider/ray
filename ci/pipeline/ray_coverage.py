@@ -10,6 +10,7 @@ from ray_logger import get_logger
 COVERAGE_FILE_NAME = "ray_release.cov"
 S3_BUCKET_NAME = "ray-release-automation-results"
 S3_BUCKET_FILEPATH = "continuous-release"
+S3_BUCKET_FILENAME_PREFIX = "ray-release-"
 
 
 @click.command()
@@ -40,7 +41,8 @@ def main(test_target: str, upload: bool) -> None:
 
 def _persist_coverage_info(coverage_file: str) -> str:
     s3_file_name = (
-        f"{S3_BUCKET_FILEPATH}/ray-release-{date.today().strftime('%Y-%m-%d')}.cov"
+        f"{S3_BUCKET_FILEPATH}/{S3_BUCKET_FILENAME_PREFIX}"
+        f"{date.today().strftime('%Y-%m-%d')}.cov"
     )
     boto3.client("s3").upload_file(
         coverage_file,

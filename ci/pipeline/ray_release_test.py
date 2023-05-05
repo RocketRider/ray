@@ -7,6 +7,7 @@ import tempfile
 from ray_logger import get_logger
 from ray_coverage import (
     COVERAGE_FILE_NAME,
+    S3_BUCKET_FILENAME_PREFIX,
     S3_BUCKET_FILEPATH,
     S3_BUCKET_NAME,
 )
@@ -36,7 +37,7 @@ def _run_tests(test_targets: Set[str]) -> None:
     )
 
 
-def _get_test_targets_for_changed_files(changed_files: List[str]) -> str:
+def _get_test_targets_for_changed_files(changed_files: List[str]) -> Set[str]:
     """
     Get the test target for the changed files.
     """
@@ -50,14 +51,30 @@ def _get_test_targets_for_changed_files(changed_files: List[str]) -> str:
             f"--include={','.join(changed_files)}",
         ]
     )
+    # coverage data is generated into a json file named coverage.json, with the
+    # following format:
+    # {
+    #   "files": {
+    #      "file_name": {
+    #        "contexts": {
+    #          "line_number": ["test_name"]
+    #           ...
+    #        }
+    #      }
+    #      ...
+    #   }
+    # }
+    #
     coverage_data = json.load(open("coverage.json"))
     test_targets = set()
-    for file_metadata in coverage_data["files"].values():
-        contexts = file_metadata["contexts"]
-        for tests_per_line in contexts.values():
-            for test_per_line in tests_per_line:
+    for data in coverage_data["files"].values():
+        context = data["contexts"]
+        for tests in context.values():
+            for test in tests:
+                # test is in the format of file/path/test_name.py::run,
+                # convert it to test target in the format of //release::test_name
                 test_targets.add(
-                    f"//release:{test_per_line.split('::')[0].split('/')[-1][:-3]}",
+                    f"//release:{test.split('::')[0].split('/')[-1][:-3]}",
                 )
     return test_targets
 
@@ -73,12 +90,12 @@ def _get_coverage_file() -> str:
     s3 = boto3.client("s3")
     files = s3.list_objects_v2(
         Bucket=S3_BUCKET_NAME,
-        Prefix=f"{S3_BUCKET_FILEPATH}/ray-release-",
+        Prefix=f"{S3_BUCKET_FILEPATH}/{S3_BUCKET_FILENAME_PREFIX}",
     )["Contents"]
     latest_coverage = [file for file in sorted(files, key=_get_last_modified)][-1]
     coverage_file_name = os.path.join(tempfile.gettempdir(), COVERAGE_FILE_NAME)
     s3.download_file(
-        Bucket="ray-release-automation-results",
+        Bucket=S3_BUCKET_NAME,
         Key=latest_coverage["Key"],
         Filename=coverage_file_name,
     )
